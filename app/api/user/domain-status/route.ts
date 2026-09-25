@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getActiveWebsite } from "@/lib/websites/active";
+import { tenantUrl } from "@/lib/urls";
 
-// GET /api/user/domain-status - Get domain status
+// GET /api/user/domain-status — status domain website AKTIF (Sprint 03)
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-    
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -14,48 +15,38 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createServerSupabaseClient();
-    
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("subdomain, custom_domain, custom_domain_verified, custom_domain_verified_at, trial_ends_at")
-      .eq("id", (session.user as any).id)
-      .single();
-
-    if (error || !user) {
+    const site = await getActiveWebsite((session.user as any).id);
+    if (!site) {
       return NextResponse.json(
-        { success: false, error: "User not found" },
+        { success: false, error: "Belum ada website" },
         { status: 404 }
       );
     }
 
-    const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "saas-saya.com";
-    
     let status: "none" | "subdomain" | "custom_pending" | "custom_verified" = "none";
-    
-    if (user.custom_domain_verified && user.custom_domain) {
+    if (site.custom_domain_verified && site.custom_domain) {
       status = "custom_verified";
-    } else if (user.custom_domain) {
+    } else if (site.custom_domain) {
       status = "custom_pending";
-    } else if (user.subdomain) {
+    } else if (site.subdomain) {
       status = "subdomain";
     }
 
     return NextResponse.json({
       success: true,
       data: {
-        has_subdomain: !!user.subdomain,
-        subdomain: user.subdomain,
-        subdomain_url: user.subdomain ? `https://${user.subdomain}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN}` : null,
-        custom_domain: user.custom_domain,
-        custom_domain_verified: user.custom_domain_verified,
-        custom_domain_verified_at: user.custom_domain_verified_at,
+        website_id: site.id,
+        website_name: site.name,
+        has_subdomain: !!site.subdomain,
+        subdomain: site.subdomain,
+        subdomain_url: tenantUrl(site.subdomain),
+        custom_domain: site.custom_domain,
+        custom_domain_verified: site.custom_domain_verified,
+        custom_domain_verified_at: site.custom_domain_verified_at,
         status,
-        full_url: user.custom_domain_verified && user.custom_domain 
-          ? `https://${user.custom_domain}` 
-          : user.subdomain 
-            ? `https://${user.subdomain}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN}` 
-            : null,
+        full_url: site.custom_domain_verified && site.custom_domain
+          ? `https://${site.custom_domain}`
+          : tenantUrl(site.subdomain),
       }
     });
   } catch (error) {

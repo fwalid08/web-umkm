@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -30,13 +31,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .eq("id", data.user.id)
           .single();
         if (!profile) return null;
+        // Sprint 03: subdomain session ikut website aktif (bukan kolom users legacy)
+        const { data: active } = await supabase
+          .from("websites")
+          .select("subdomain")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
         return {
           id: data.user.id,
           email: data.user.email!,
           name: profile.name || data.user.email!,
           image: profile.avatar_url || null,
           tier: (profile.tier as any) || "free",
-          subdomain: profile.subdomain,
+          subdomain: active?.subdomain ?? profile.subdomain,
           business_type: profile.business_type,
           trial_ends_at: profile.trial_ends_at,
         } as any;
@@ -46,12 +55,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user, account }: any) {
       if (account?.provider === "google") {
-        const supabase = await createServerSupabaseClient();
+        // Service-role: bypasses RLS INSERT (anon tidak bisa insert tanpa auth.uid)
+        const supabase = createServiceSupabaseClient();
         // Check if user already exists by email
-        const { data: existing } = await supabase.from("users").select("id, tier, subdomain").eq("email", user.email).single();
+        const { data: existing } = await supabase.from("users").select("id, tier, subdomain").eq("email", user.email).maybeSingle();
         if (!existing) {
-          // Auto-create Supabase auth user + profile for Google user
-          // Use service role to create profile directly (no password)
+          // Auto-create profile untuk Google user (no password, auth via NextAuth)
           const newId = crypto.randomUUID();
           const subdomain = `tenant-${newId.slice(0, 8)}`;
           const trialEndsAt = new Date(); trialEndsAt.setDate(trialEndsAt.getDate() + 14);
@@ -62,12 +71,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             business_type: "retail",
             tier: "free",
             trial_ends_at: trialEndsAt.toISOString(),
-            subdomain,
             avatar_url: user.image || null,
-            // Note: this separates auth (NextAuth) from Supabase auth. For MVP, we store Google users directly in public.users.
-            // Optional: also track google_id if needed
+            auth_provider: "google",
+            google_id: account?.providerAccountId || null,
+            // Note: Google users disimpan di public.users, auth via NextAuth JWT.
+            // RLS orders pakai service-role atau mapping email → id di API layer.
           });
           if (error) console.error("Google auto-create profile error", error);
+          // Sprint 03: website pertama + aktif (subdomain pindah ke websites)
+          const { data: site } = await supabase
+            .from("websites")
+            .insert({ user_id: newId, name: user.name || "Website Utama", business_type: "retail", subdomain })
+            .select("id")
+            .single();
+          if (site) await supabase.from("users").update({ active_website_id: site.id }).eq("id", newId);
           // Attach generated id/subdomain to user for jwt
           (user as any).id = newId;
           (user as any).tier = "free";

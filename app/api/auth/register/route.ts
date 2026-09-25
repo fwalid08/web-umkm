@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { signUpSchema, type SignUpInput } from "@/types";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { signUpSchema } from "@/types";
 
 // POST /api/auth/register - Register new user
 export async function POST(request: NextRequest) {
@@ -16,13 +16,17 @@ export async function POST(request: NextRequest) {
     }
 
     const { name, email, password, business_type } = validation.data;
-    const supabase = await createServerSupabaseClient();
+    // Service-role client: bypasses RLS untuk admin ops (createUser + insert profile)
+    const supabase = createServiceSupabaseClient();
 
-    // Check if email already exists
-    const { data: existingUser } = await supabase.auth.admin.listUsers();
-    const userExists = existingUser.users.some((u: any) => u.email === email);
+    // Check if email already exists (via public.users — scalable, no full listUsers scan)
+    const { data: existingProfile } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
 
-    if (userExists) {
+    if (existingProfile) {
       return NextResponse.json(
         { success: false, error: "Email sudah terdaftar" },
         { status: 409 }
@@ -55,7 +59,8 @@ export async function POST(request: NextRequest) {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 14);
 
-    // Create user profile
+    // Create user profile (service-role bypasses RLS INSERT policy)
+    // Sprint 03: kolom domain pindah ke websites; users.subdomain tidak lagi ditulis.
     const { data: user, error: profileError } = await supabase
       .from("users")
       .insert({
@@ -65,7 +70,7 @@ export async function POST(request: NextRequest) {
         business_type,
         tier: "free",
         trial_ends_at: trialEndsAt.toISOString(),
-        subdomain: `tenant-${authData.user.id.slice(0, 8)}`,
+        auth_provider: "credentials",
       })
       .select()
       .single();
@@ -79,6 +84,29 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Sprint 03: website pertama ("Website Utama") + jadikan aktif
+    const { data: site, error: siteError } = await supabase
+      .from("websites")
+      .insert({
+        user_id: authData.user.id,
+        name,
+        business_type,
+        subdomain,
+      })
+      .select("id, subdomain")
+      .single();
+
+    if (siteError || !site) {
+      console.error("Website error:", siteError);
+      await supabase.from("users").delete().eq("id", authData.user.id);
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      return NextResponse.json(
+        { success: false, error: "Gagal membuat website" },
+        { status: 500 }
+      );
+    }
+    await supabase.from("users").update({ active_website_id: site.id }).eq("id", authData.user.id);
 
     // Create default subscription record
     await supabase.from("subscriptions").insert({
@@ -98,7 +126,8 @@ export async function POST(request: NextRequest) {
           id: user.id,
           email: user.email,
           name: user.name,
-          subdomain: user.subdomain,
+          subdomain: site.subdomain,
+          website_id: site.id,
         },
       },
     });

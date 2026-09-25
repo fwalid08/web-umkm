@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "saas-saya.com";
+/**
+ * Ekstrak subdomain tenant dari hostname → header x-tenant-subdomain.
+ * Env-driven: ROOT=localhost:3000 (dev, sub.localhost) atau saas-saya.com (prod).
+ * Host lain (custom domain) diteruskan; getTenantSite() resolve via DB.
+ */
+
+const ROOT = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "saas-saya.com")
+  .split(":")[0]
+  .toLowerCase();
+const SUB_RE = /^[a-z0-9-]{3,50}$/;
+
+function tenantHeaders(sub: string) {
+  const res = NextResponse.next();
+  res.headers.set("x-tenant-subdomain", sub);
+  res.headers.set("x-is-tenant", "true");
+  return res;
+}
 
 export default function proxy(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;
@@ -13,20 +29,33 @@ export default function proxy(request: NextRequest) {
   ) {
     return NextResponse.next();
   }
-  const isRoot = hostname === ROOT_DOMAIN || hostname === `www.${ROOT_DOMAIN}` || hostname === "localhost:3000" || hostname.startsWith("localhost");
-  const isAdmin = hostname.startsWith("admin.");
-  if (!isRoot && !isAdmin && hostname.includes(ROOT_DOMAIN)) {
-    const subdomain = hostname.replace(`.${ROOT_DOMAIN}`, "");
-    if (/^[a-z0-9-]{3,50}$/.test(subdomain)) {
-      const res = NextResponse.next();
-      res.headers.set("x-tenant-subdomain", subdomain);
-      res.headers.set("x-is-tenant", "true");
-      return res;
-    }
+
+  const host = hostname.toLowerCase();
+  if (host.startsWith("admin.")) {
+    const res = NextResponse.next();
+    res.headers.set("x-tenant-subdomain", "");
+    res.headers.set("x-is-tenant", "admin");
+    return res;
   }
+
+  // Root & www → landing (bukan tenant)
+  if (host === ROOT || host === `www.${ROOT}`) {
+    const res = NextResponse.next();
+    res.headers.set("x-tenant-subdomain", "");
+    res.headers.set("x-is-tenant", "false");
+    return res;
+  }
+
+  // sub.ROOT → tenant (prod: toko.saas-saya.com; lokal: toko.localhost)
+  if (host.endsWith(`.${ROOT}`)) {
+    const sub = host.slice(0, -(ROOT.length + 1));
+    if (SUB_RE.test(sub)) return tenantHeaders(sub);
+  }
+
+  // Bukan root & bukan sub → custom domain (resolve di getTenantSite)
   const res = NextResponse.next();
   res.headers.set("x-tenant-subdomain", "");
-  res.headers.set("x-is-tenant", isAdmin ? "admin" : "false");
+  res.headers.set("x-is-tenant", "false");
   return res;
 }
 

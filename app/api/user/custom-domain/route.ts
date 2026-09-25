@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { customDomainSchema } from "@/types";
+import { getActiveWebsite } from "@/lib/websites/active";
+import { dnsTarget } from "@/lib/urls";
 
-// PUT /api/user/custom-domain - Submit custom domain for verification
+// PUT /api/user/custom-domain — submit custom domain website AKTIF (Sprint 03)
 export async function PUT(request: NextRequest) {
   try {
     const session = await auth();
-    
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -17,7 +19,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const validation = customDomainSchema.safeParse(body);
-    
+
     if (!validation.success) {
       return NextResponse.json(
         { success: false, error: validation.error.issues[0].message },
@@ -26,7 +28,12 @@ export async function PUT(request: NextRequest) {
     }
 
     const { domain } = validation.data;
-    const supabase = await createServerSupabaseClient();
+    const userId = (session.user as any).id as string;
+    const site = await getActiveWebsite(userId);
+    if (!site) {
+      return NextResponse.json({ success: false, error: "Belum ada website" }, { status: 404 });
+    }
+    const supabase = createServiceSupabaseClient();
 
     // Normalize domain (remove www, protocol)
     const normalizedDomain = domain
@@ -35,17 +42,17 @@ export async function PUT(request: NextRequest) {
       .replace(/^www\./, "")
       .replace(/\/.*$/, "");
 
-    // Check if domain is already used by another user
+    // Check if domain is already used by another website
     const { data: existing } = await supabase
-      .from("users")
+      .from("websites")
       .select("id")
       .eq("custom_domain", normalizedDomain)
-      .neq("id", (session.user as any).id)
-      .single();
+      .neq("id", site.id)
+      .maybeSingle();
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: "Domain sudah digunakan oleh user lain" },
+        { success: false, error: "Domain sudah digunakan website lain" },
         { status: 409 }
       );
     }
@@ -53,17 +60,15 @@ export async function PUT(request: NextRequest) {
     // Generate verification token
     const verificationCode = `saas-verify-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Update user with custom domain and verification code
-    const { data: user, error } = await supabase
-      .from("users")
+    const { error } = await supabase
+      .from("websites")
       .update({
         custom_domain: normalizedDomain,
         custom_domain_verified: false,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", (session.user as any).id)
-      .select("custom_domain")
-      .single();
+      .eq("id", site.id)
+      .eq("user_id", userId);
 
     if (error) {
       console.error("Error updating custom domain:", error);
@@ -84,7 +89,7 @@ export async function PUT(request: NextRequest) {
       {
         type: "CNAME",
         name: "@",
-        value: `${process.env.NEXT_PUBLIC_ROOT_DOMAIN || "saas-saya.com"}`,
+        value: dnsTarget(),
         description: "Arahkan ke platform SaaS",
       },
     ];
@@ -92,6 +97,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
+        website_id: site.id,
         domain: normalizedDomain,
         verification_code: verificationCode,
         dns_instructions: dnsInstructions,

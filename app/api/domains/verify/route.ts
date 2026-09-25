@@ -8,10 +8,11 @@ export async function POST(request: NextRequest) {
     // In production, add authentication/authorization check here
     
     const supabase = await createServerSupabaseClient();
-    
-    // Get all users with unverified custom domains
+
+    // Sprint 03: custom domain tinggal di websites (bukan users)
+    // Get all websites with unverified custom domains
     const { data: users, error } = await supabase
-      .from("users")
+      .from("websites")
       .select("id, custom_domain")
       .not("custom_domain", "is", null)
       .eq("custom_domain_verified", false);
@@ -43,9 +44,9 @@ export async function POST(request: NextRequest) {
         const verified = await checkDNSTXTRecord(user.custom_domain);
         
         if (verified) {
-          // Update user as verified
+          // Update website as verified
           const { error: updateError } = await supabase
-            .from("users")
+            .from("websites")
             .update({
               custom_domain_verified: true,
               custom_domain_verified_at: new Date().toISOString(),

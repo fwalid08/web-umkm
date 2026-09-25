@@ -4,9 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:https": "next dev --experimental-https --experimental-https-key ./.cert/localhost-key.pem --experimental-https-cert ./.cert/localhost.pem",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:push": "echo \"→ Jalankan supabase/migrations/001..007 BERURUTAN di Supabase Dashboard > SQL Editor. Lihat README # Database Setup.\"",
+    "db:reset": "echo \"⚠️  DEV ONLY: TRUNCATE users, orders, subscriptions, user_templates CASCADE di SQL Editor. Jangan di prod!\"",
+    "db:new": "echo \"Buat file supabase/migrations/00X_nama.sql baru (contoh: 005_add_products.sql). Ikuti format 001-004.\"",
+    "db:check": "ls -1 supabase/migrations/"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -31,7 +38,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3"
   },
   "packageManager": "pnpm@10.33.2"
 }

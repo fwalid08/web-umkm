@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { appBase } from "@/lib/urls";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "id_ID",
-    url: "https://saas-saya.com",
+    url: appBase(),
     title: "UMKM SaaS - Website Toko Online Gratis untuk UMKM",
     description:
       "Bangun website toko online profesional untuk UMKM dalam menit. Template siap pakai, order 24/7, gratis 14 hari.",

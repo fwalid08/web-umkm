@@ -261,3 +261,108 @@ export type SignInInput = z.infer<typeof signInSchema>;
 export type SubdomainInput = z.infer<typeof subdomainSchema>;
 export type CustomDomainInput = z.infer<typeof customDomainSchema>;
 export type ProductInput = z.infer<typeof productSchema>;
+
+// Website Builder Types (Sprint 01 — Template Fixed, tanpa drag & drop)
+// Client kirim OVERRIDE per section; server merge dengan defaults template,
+// validasi whitelist section_id + required tidak boleh dimatikan.
+export const websiteSectionSchema = z.object({
+  id: z.string().min(1, "Section id wajib diisi"),
+  enabled: z.boolean().default(true),
+  style: z.record(z.string(), z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const websiteConfigSchema = z.object({
+  template_id: z.string().uuid("Template tidak valid"),
+  custom_config: z.object({
+    theme: z.record(z.string(), z.unknown()).optional(),
+    sections: z.array(websiteSectionSchema).min(1, "Minimal 1 section"),
+    seo: z
+      .object({
+        title: z.string().max(60, "Judul SEO maksimal 60 karakter").optional(),
+        description: z.string().max(160, "Deskripsi SEO maksimal 160 karakter").optional(),
+      })
+      .optional(),
+  }),
+});
+
+export type WebsiteSectionInput = z.infer<typeof websiteSectionSchema>;
+export type WebsiteConfigInput = z.infer<typeof websiteConfigSchema>;
+
+// Batas tier (Sprint 01) — sinkron dengan sprints/sprint_1.md §4
+export const FREE_TEMPLATE_NAMES = ["food", "fashion", "retail"] as const;
+export const FREE_PRODUCT_MAX = 5;
+
+// Order Schemas (Sprint 02 Sesi A — guest checkout + status workflow)
+// total_amount SELALU dihitung server (calcTotal), client tidak mengirimnya.
+export const createOrderSchema = z.object({
+  subdomain: z.string().min(3, "Subdomain/domain wajib diisi").max(255),
+  product_name: z.string().min(1, "Nama produk wajib diisi").max(255),
+  product_price: z.number().int().min(0, "Harga tidak valid"),
+  quantity: z.number().int().min(1, "Minimal 1").max(99, "Maksimal 99"),
+  customer_name: z.string().min(1, "Nama wajib diisi").max(100),
+  customer_phone: z.string().min(9, "Nomor HP minimal 9 digit").max(20),
+  customer_email: z.string().email("Email tidak valid").optional().or(z.literal("")),
+  payment_method: z.enum(["cash", "cod", "transfer"]),
+  delivery_address: z.string().max(500).optional().or(z.literal("")),
+  notes: z.string().max(1000).optional().or(z.literal("")),
+});
+
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(["baru", "konfirmasi", "dikirim", "selesai"]),
+});
+
+export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
+
+// Website & Plan Types (Sprint 03 — multi-website, isolasi per website_id)
+export interface Website {
+  id: string;
+  user_id: string;
+  name: string;
+  business_type: BusinessType | null;
+  subdomain: string | null;
+  custom_domain: string | null;
+  custom_domain_verified: boolean;
+  custom_domain_verified_at: string | null;
+  current_template_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  slug: string;
+  price_monthly: number;
+  max_websites: number;
+  is_active: boolean;
+}
+
+// Fallback jika plan_id null (sinkron dengan seed 006 + revisi 007: Starter 3)
+export const TIER_WEBSITE_FALLBACK: Record<string, number> = {
+  free: 1,
+  starter: 3,
+  growth: 10,
+  enterprise: 999,
+};
+
+export const createWebsiteSchema = z.object({
+  name: z.string().min(2, "Nama website minimal 2 karakter").max(100),
+  subdomain: z
+    .string()
+    .min(3, "Subdomain minimal 3 karakter")
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, "Subdomain hanya huruf kecil, angka, strip")
+    .optional()
+    .or(z.literal("")),
+  business_type: z.enum(["food", "fashion", "handicraft", "retail", "services"]).optional(),
+});
+
+export const updateWebsiteSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  business_type: z.enum(["food", "fashion", "handicraft", "retail", "services"]).optional(),
+});
+
+export type CreateWebsiteInput = z.infer<typeof createWebsiteSchema>;
+export type UpdateWebsiteInput = z.infer<typeof updateWebsiteSchema>;

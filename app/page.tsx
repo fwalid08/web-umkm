@@ -1,7 +1,29 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { getTenantSite } from "@/lib/builder/public";
+import { PublicWebsite } from "@/components/website/renderer";
+import { rootHost, tenantDisplay } from "@/lib/urls";
 import { Store, Sparkles, ShoppingBag, BarChart3, Clock, Shield, ArrowRight, CheckCircle2, Star } from "lucide-react";
 
-export default function Home() {
+// Sprint 01 US-04: root "/" ganda — request tenant (subdomain/custom domain)
+// render website toko, request root render landing. SEO ikut tenant.
+export async function generateMetadata(): Promise<Metadata> {
+  const tenant = await getTenantSite();
+  if (tenant.site) {
+    return { title: tenant.site.seo.title, description: tenant.site.seo.description };
+  }
+  return { title: "UMKM SaaS — Website Toko Online dalam Menit", description: "5 template siap pakai untuk UMKM Indonesia. Gratis 14 hari." };
+}
+
+export default async function Home() {
+  const tenant = await getTenantSite();
+  if (tenant.isTenant && !tenant.site) notFound();
+  if (tenant.site) return <PublicWebsite site={tenant.site} />;
+  return <LandingPage />;
+}
+
+function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -51,7 +73,7 @@ export default function Home() {
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <div className="h-10 bg-gray-900 flex items-center gap-1.5 px-3">
                 <span className="w-3 h-3 bg-red-400 rounded-full" /><span className="w-3 h-3 bg-yellow-400 rounded-full" /><span className="w-3 h-3 bg-green-400 rounded-full" />
-                <span className="ml-3 text-xs text-gray-400">tenant-warung-ibu.saas-saya.com</span>
+                <span className="ml-3 text-xs text-gray-400">{tenantDisplay("tenant-warung-ibu")}</span>
               </div>
               <div className="p-6 space-y-4">
                 <div className="h-32 bg-gradient-to-br from-orange-100 to-amber-50 rounded-xl flex items-center justify-center">
@@ -91,7 +113,7 @@ export default function Home() {
             {icon: ShoppingBag, title: "Order Dashboard", desc: "Kurangi 8 langkah manual (DM→WA→catat) jadi 2 langkah"},
             {icon: Clock, title: "Order 24/7 + Auto-response", desc: "Tidak kehilangan pelanggan saat Anda tidur/masak"},
             {icon: BarChart3, title: "Info Otomatis", desc: "Harga, lokasi, jam, COD tampil otomatis kurangi FAQ berulang"},
-            {icon: Shield, title: "Subdomain Otomatis", desc: "tenant-xxx.saas-saya.com + opsi custom domain tokoku.com"},
+            {icon: Shield, title: "Subdomain Otomatis", desc: `${tenantDisplay("tenant-xxx")} + opsi custom domain tokoku.com`},
             {icon: Sparkles, title: "Gratis 14 Hari", desc: "Coba penuh, 3 produk di Free, upgrade Rp99rb saat butuh"},
           ].map(f=> (
             <div key={f.title} className="border rounded-xl p-6 bg-white">
@@ -129,7 +151,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t py-8 text-center text-sm text-gray-500">
-        UMKM SaaS • saas-saya.com • Dibuat untuk UMKM Indonesia • Next.js + Tailwind + Supabase
+        UMKM SaaS • {rootHost()} • Dibuat untuk UMKM Indonesia • Next.js + Tailwind + Supabase
       </footer>
     </div>
   );

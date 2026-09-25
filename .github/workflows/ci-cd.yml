@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: '20.x'
-  PNPM_VERSION: '9.x'
+  PNPM_VERSION: '10.x'
 
 jobs:
   lint-and-typecheck:
@@ -60,7 +60,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: pnpm test --ci
+        run: pnpm test
 
   build:
     name: Build
